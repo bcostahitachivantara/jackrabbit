@@ -71,7 +71,7 @@ abstract class BLOBFileValue implements Binary {
      *
      * @return the data identifier or null
      */
-    DataIdentifier getDataIdentifier() {
+    public DataIdentifier getDataIdentifier() {
         return null;
     }
 

@@ -16,7 +16,12 @@
  */
 package org.apache.jackrabbit.core.gc;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +63,7 @@ import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NoSuchItemStateException;
 import org.apache.jackrabbit.core.state.NodeState;
 import org.apache.jackrabbit.core.state.PropertyState;
+import org.apache.jackrabbit.core.value.BLOBInDataStore;
 import org.apache.jackrabbit.core.value.InternalValue;
 import org.apache.jackrabbit.spi.Name;
 import org.slf4j.Logger;
@@ -208,10 +214,57 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         this.callback = callback;
     }
 
+    private void debugDataStore() {
+
+        Date date = new Date();
+        String timestamp = (date.getYear()+1900) + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " + date.getHours() + ":" + date.getMinutes() + ":" + date.getSeconds();
+        File userDir = new File( System.getProperty("user.dir") );
+        File file = new File ( userDir.getParentFile().getParentFile().getPath()+"/debug_datastore_"+timestamp+".csv" );
+        System.out.println( "User dir: " + userDir.getAbsolutePath() );
+        System.out.println( "Datastore Debug File: " + file.getAbsolutePath() );
+        try(
+          FileWriter fileWriter = new FileWriter( file, false);
+          BufferedWriter writer = new BufferedWriter( fileWriter  );
+        ) {
+            writer.write(";node id; path; hasBlobsInDataStore; datastore id; size");
+            writer.newLine();
+            for( Map.Entry<NodeId, NodeInfo> entry : pmList[2].getAllNodeInfos( null, NODESATONCE).entrySet() ) {
+                writer.write( ";" + entry.getKey() );
+                writer.write( ";" + sessionList[1].getNodeById( entry.getKey() ).toString() );
+
+                if( !entry.getValue().hasBlobsInDataStore() ) {
+                    writer.write(";false");
+                } else {
+                    writer.write(";true");
+                    NodeState state = pmList[2].load(entry.getValue().getId());
+                    Set<Name> propertyNames = state.getPropertyNames();
+                    for (Name name : propertyNames) {
+                        PropertyId pid = new PropertyId(entry.getValue().getId(), name);
+                        PropertyState ps = pmList[2].load(pid);
+                        if (ps.getType() == PropertyType.BINARY) {
+                            for (InternalValue v : ps.getValues()) {
+                                writer.write( ";" + ((BLOBInDataStore)v.getBLOBFileValue()).getDataIdentifier().toString() );
+                                writer.write( ";" + v.getLength() );
+                            }
+                        }
+                    }
+                }
+                writer.newLine();
+            }
+
+
+        } catch( Exception e ) {
+            System.out.println( e.getMessage() + e.getCause() );
+        }
+    }
+
     public void mark() throws RepositoryException {
         if (store == null) {
             throw new RepositoryException("No DataStore configured.");
         }
+
+        debugDataStore();
+
         long now = System.currentTimeMillis();
         if (startScanTimestamp == 0) {
             startScanTimestamp = now;
