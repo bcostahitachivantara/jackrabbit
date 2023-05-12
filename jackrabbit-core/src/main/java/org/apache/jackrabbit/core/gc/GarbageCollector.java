@@ -217,7 +217,7 @@ public class GarbageCollector implements DataStoreGarbageCollector {
     private void debugDataStore() {
 
         Date date = new Date();
-        String timestamp = (date.getYear()+1900) + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " + date.getHours() + ":" + date.getMinutes() + ":" + date.getSeconds();
+        String timestamp = (date.getYear()+1900) + ("" + (date.getMonth()+1)) + ("" + date.getDate()) + ("-" + date.getHours()) + ("" + date.getMinutes()) + ("" + date.getSeconds());
         File userDir = new File( System.getProperty("user.dir") );
         File file = new File ( userDir.getParentFile().getParentFile().getPath()+"/debug_datastore_"+timestamp+".csv" );
         System.out.println( "User dir: " + userDir.getAbsolutePath() );
