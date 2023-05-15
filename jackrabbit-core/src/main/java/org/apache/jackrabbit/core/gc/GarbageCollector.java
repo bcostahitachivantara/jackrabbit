@@ -58,6 +58,9 @@ import org.apache.jackrabbit.core.id.PropertyId;
 import org.apache.jackrabbit.core.observation.SynchronousEventListener;
 import org.apache.jackrabbit.core.persistence.IterablePersistenceManager;
 import org.apache.jackrabbit.core.persistence.PersistenceManager;
+import org.apache.jackrabbit.core.persistence.pool.BundleDbPersistenceManager;
+import org.apache.jackrabbit.core.persistence.pool.MySqlPersistenceManager;
+import org.apache.jackrabbit.core.persistence.pool.PostgreSQLPersistenceManager;
 import org.apache.jackrabbit.core.persistence.util.NodeInfo;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.NoSuchItemStateException;
@@ -214,10 +217,37 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         this.callback = callback;
     }
 
+
+    private BundleDbPersistenceManager getPersistenceManagerForWorkspace( String workspace ) {
+        for (int i = 0; i < pmList.length; i++) {
+            if (pmList[i] instanceof BundleDbPersistenceManager) {
+                BundleDbPersistenceManager bundleDbPersistenceManagers = (BundleDbPersistenceManager) pmList[i];
+                if (workspace.equals(bundleDbPersistenceManagers.toString())) {
+                    return (BundleDbPersistenceManager) pmList[i];
+                }
+            }
+        }
+        String message = "It was not possible obtain Persistence Manager for workspace: '" + workspace + "'";
+        System.err.println( message);
+        throw new RuntimeException( message );
+    }
+
+    private SessionImpl getJackrabbitSession( String workspace ) {
+        for (int i = 0; i < sessionList.length; i++) {
+            if( sessionList[i].getWorkspace().getName().equals(workspace) ){
+                return sessionList[i];
+            }
+        }
+        String message = "It was not possible obtain Jackrabbit Session for workspace: '" + workspace + "'";
+        System.err.println( message);
+        throw new RuntimeException( message );
+    }
+
     private void debugDataStore() {
 
+        System.out.println( "Debug file process starting");
         Date date = new Date();
-        String timestamp = (date.getYear()+1900) + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " + date.getHours() + ":" + date.getMinutes() + ":" + date.getSeconds();
+        String timestamp = (date.getYear()+1900) + "-" + (date.getMonth()+1) + "-" + date.getDate() + " " + date.getHours() + "h" + date.getMinutes() + "m" + date.getSeconds() + "s";
         File userDir = new File( System.getProperty("user.dir") );
         File file = new File ( userDir.getParentFile().getParentFile().getPath()+"/debug_datastore_"+timestamp+".csv" );
         System.out.println( "User dir: " + userDir.getAbsolutePath() );
@@ -228,33 +258,35 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         ) {
             writer.write(";node id; path; hasBlobsInDataStore; datastore id; size");
             writer.newLine();
-            for( Map.Entry<NodeId, NodeInfo> entry : pmList[2].getAllNodeInfos( null, NODESATONCE).entrySet() ) {
-                writer.write( ";" + entry.getKey() );
-                writer.write( ";" + sessionList[1].getNodeById( entry.getKey() ).toString() );
+            BundleDbPersistenceManager persistenceManager = getPersistenceManagerForWorkspace("default");
+            SessionImpl session = getJackrabbitSession("default");
+            for (Map.Entry<NodeId, NodeInfo> entry : persistenceManager.getAllNodeInfos(null, NODESATONCE).entrySet()) {
+                writer.write(";" + entry.getKey());
+                writer.write(";" + session.getNodeById(entry.getKey()).toString());
 
-                if( !entry.getValue().hasBlobsInDataStore() ) {
+                if (!entry.getValue().hasBlobsInDataStore()) {
                     writer.write(";false");
                 } else {
                     writer.write(";true");
-                    NodeState state = pmList[2].load(entry.getValue().getId());
+                    NodeState state = persistenceManager.load(entry.getValue().getId());
                     Set<Name> propertyNames = state.getPropertyNames();
                     for (Name name : propertyNames) {
                         PropertyId pid = new PropertyId(entry.getValue().getId(), name);
-                        PropertyState ps = pmList[2].load(pid);
+                        PropertyState ps = persistenceManager.load(pid);
                         if (ps.getType() == PropertyType.BINARY) {
                             for (InternalValue v : ps.getValues()) {
-                                writer.write( ";" + ((BLOBInDataStore)v.getBLOBFileValue()).getDataIdentifier().toString() );
-                                writer.write( ";" + v.getLength() );
+                                writer.write(";" + ((BLOBInDataStore) v.getBLOBFileValue()).getDataIdentifier().toString());
+                                writer.write(";" + v.getLength());
                             }
                         }
                     }
                 }
                 writer.newLine();
             }
-
-
         } catch( Exception e ) {
-            System.out.println( e.getMessage() + e.getCause() );
+            System.err.println( e.getMessage() + " - " + e.getCause() );
+        } finally {
+            System.out.println( "Debug file process completed");
         }
     }
 
