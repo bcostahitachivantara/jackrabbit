@@ -218,6 +218,15 @@ public class GarbageCollector implements DataStoreGarbageCollector {
     }
 
 
+    private void listAllWorkspacesDebug() {
+        for ( int i = 0; i < pmList.length; i++ ) {
+            if ( pmList[i] instanceof BundleDbPersistenceManager ) {
+                BundleDbPersistenceManager bundleDbPersistenceManagers = (BundleDbPersistenceManager) pmList[i];
+                System.out.println( "workspace available: " + bundleDbPersistenceManagers.toString() );
+            }
+        }
+    }
+
     private BundleDbPersistenceManager getPersistenceManagerForWorkspace( String workspace ) {
         for (int i = 0; i < pmList.length; i++) {
             if (pmList[i] instanceof BundleDbPersistenceManager) {
@@ -254,35 +263,45 @@ public class GarbageCollector implements DataStoreGarbageCollector {
         System.out.println( "Datastore Debug File: " + file.getAbsolutePath() );
         try(
           FileWriter fileWriter = new FileWriter( file, false);
-          BufferedWriter writer = new BufferedWriter( fileWriter  );
+          BufferedWriter writer = new BufferedWriter( fileWriter );
         ) {
             writer.write(";node id; path; hasBlobsInDataStore; datastore id; size");
             writer.newLine();
+            listAllWorkspacesDebug();
             BundleDbPersistenceManager persistenceManager = getPersistenceManagerForWorkspace("default");
             SessionImpl session = getJackrabbitSession("default");
-            for (Map.Entry<NodeId, NodeInfo> entry : persistenceManager.getAllNodeInfos(null, NODESATONCE).entrySet()) {
-                writer.write(";" + entry.getKey());
-                writer.write(";" + session.getNodeById(entry.getKey()).toString());
+            int countBatch = 0;
+            Map<NodeId, NodeInfo> batch = persistenceManager.getAllNodeInfos(null, NODESATONCE);
+            while ( !batch.isEmpty() ) {
+                System.out.println( "Batch " + (++countBatch) + " Nodes size: " + batch.size() );
+                NodeId lastId = null;
+                for ( Map.Entry<NodeId, NodeInfo> entry : batch.entrySet() ) {
+                    lastId = entry.getValue().getId();
+                    writer.write(";" + entry.getKey());
+                    writer.write(";" + session.getNodeById(entry.getKey()).toString());
 
-                if (!entry.getValue().hasBlobsInDataStore()) {
-                    writer.write(";false");
-                } else {
-                    writer.write(";true");
-                    NodeState state = persistenceManager.load(entry.getValue().getId());
-                    Set<Name> propertyNames = state.getPropertyNames();
-                    for (Name name : propertyNames) {
-                        PropertyId pid = new PropertyId(entry.getValue().getId(), name);
-                        PropertyState ps = persistenceManager.load(pid);
-                        if (ps.getType() == PropertyType.BINARY) {
-                            for (InternalValue v : ps.getValues()) {
-                                writer.write(";" + ((BLOBInDataStore) v.getBLOBFileValue()).getDataIdentifier().toString());
-                                writer.write(";" + v.getLength());
+                    if (!entry.getValue().hasBlobsInDataStore()) {
+                        writer.write(";false");
+                    } else {
+                        writer.write(";true");
+                        NodeState state = persistenceManager.load(entry.getValue().getId());
+                        Set<Name> propertyNames = state.getPropertyNames();
+                        for (Name name : propertyNames) {
+                            PropertyId pid = new PropertyId(entry.getValue().getId(), name);
+                            PropertyState ps = persistenceManager.load(pid);
+                            if (ps.getType() == PropertyType.BINARY) {
+                                for (InternalValue v : ps.getValues()) {
+                                    writer.write(";" + ((BLOBInDataStore) v.getBLOBFileValue()).getDataIdentifier().toString());
+                                    writer.write(";" + v.getLength());
+                                }
                             }
                         }
                     }
+                    writer.newLine();
                 }
-                writer.newLine();
+                batch = persistenceManager.getAllNodeInfos( lastId, NODESATONCE );
             }
+
         } catch( Exception e ) {
             System.err.println( e.getMessage() + " - " + e.getCause() );
         } finally {
